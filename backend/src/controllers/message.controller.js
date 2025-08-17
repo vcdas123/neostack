@@ -6,8 +6,35 @@ import { getReceiverSocketId, io } from "../lib/socket.js";
 
 export const getUsersForSidebar = async (req, res) => {
   try {
+    const myId = req.user._id;
+
+    // Get distinct senderIds and receiverIds
+    const senderIds = await Message.distinct("senderId", { receiverId: myId });
+    const receiverIds = await Message.distinct("receiverId", {
+      senderId: myId,
+    });
+
+    // Merge and remove duplicates
+    const uniqueUserIds = [...new Set([...senderIds, ...receiverIds])];
+
+    // Fetch user details
+    const users = await User.find({ _id: { $in: uniqueUserIds } }).select(
+      "-password"
+    );
+
+    res.status(200).json(users);
+  } catch (error) {
+    console.error("Error in getUsersForSidebar: ", error.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+export const getAllOtherUsers = async (req, res) => {
+  try {
     const loggedInUserId = req.user._id;
-    const filteredUsers = await User.find({ _id: { $ne: loggedInUserId } }).select("-password");
+    const filteredUsers = await User.find({
+      _id: { $ne: loggedInUserId },
+    }).select("-password");
 
     res.status(200).json(filteredUsers);
   } catch (error) {
