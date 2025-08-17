@@ -3,7 +3,8 @@ import { axiosInstance } from "../lib/axios.js";
 import toast from "react-hot-toast";
 import { io } from "socket.io-client";
 
-const BASE_URL = import.meta.env.MODE === "development" ? "http://localhost:5001" : "/";
+const BASE_URL =
+  import.meta.env.MODE === "development" ? "http://localhost:5001" : "/";
 
 export const useAuthStore = create((set, get) => ({
   authUser: null,
@@ -28,7 +29,7 @@ export const useAuthStore = create((set, get) => ({
     }
   },
 
-  signup: async (data) => {
+  signup: async data => {
     set({ isSigningUp: true });
     try {
       const res = await axiosInstance.post("/auth/signup", data);
@@ -42,7 +43,7 @@ export const useAuthStore = create((set, get) => ({
     }
   },
 
-  login: async (data) => {
+  login: async data => {
     set({ isLoggingIn: true });
     try {
       const res = await axiosInstance.post("/auth/login", data);
@@ -68,15 +69,30 @@ export const useAuthStore = create((set, get) => ({
     }
   },
 
-  updateProfile: async (data) => {
+  // updateProfile: async (data) => {
+  //   set({ isUpdatingProfile: true });
+  //   try {
+  //     const res = await axiosInstance.put("/auth/update-profile", data);
+  //     set({ authUser: res.data });
+  //     toast.success("Profile updated successfully");
+  //   } catch (error) {
+  //     console.log("error in update profile:", error);
+  //     toast.error(error.response.data.message);
+  //   } finally {
+  //     set({ isUpdatingProfile: false });
+  //   }
+  // },
+  updateProfile: async formData => {
     set({ isUpdatingProfile: true });
     try {
-      const res = await axiosInstance.put("/auth/update-profile", data);
+      const res = await axiosInstance.put("/auth/update-profile", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
       set({ authUser: res.data });
       toast.success("Profile updated successfully");
     } catch (error) {
       console.log("error in update profile:", error);
-      toast.error(error.response.data.message);
+      toast.error(error.response?.data?.message || "Something went wrong");
     } finally {
       set({ isUpdatingProfile: false });
     }
@@ -95,7 +111,7 @@ export const useAuthStore = create((set, get) => ({
 
     set({ socket: socket });
 
-    socket.on("getOnlineUsers", (userIds) => {
+    socket.on("getOnlineUsers", userIds => {
       set({ onlineUsers: userIds });
     });
   },

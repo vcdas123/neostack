@@ -11,7 +11,9 @@ export const signup = async (req, res) => {
     }
 
     if (password.length < 6) {
-      return res.status(400).json({ message: "Password must be at least 6 characters" });
+      return res
+        .status(400)
+        .json({ message: "Password must be at least 6 characters" });
     }
 
     const user = await User.findOne({ email });
@@ -68,6 +70,8 @@ export const login = async (req, res) => {
       fullName: user.fullName,
       email: user.email,
       profilePic: user.profilePic,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
     });
   } catch (error) {
     console.log("Error in login controller", error.message);
@@ -87,21 +91,48 @@ export const logout = (req, res) => {
 
 export const updateProfile = async (req, res) => {
   try {
-    const { profilePic } = req.body;
+    // const { profilePic } = req.body;
+    // const userId = req.user._id;
+
+    // if (!profilePic) {
+    //   return res.status(400).json({ message: "Profile pic is required" });
+    // }
+
+    // const uploadResponse = await cloudinary.uploader.upload(profilePic);
+    // const updatedUser = await User.findByIdAndUpdate(
+    //   userId,
+    //   { profilePic: uploadResponse.secure_url },
+    //   { new: true }
+    // );
+
+    // res.status(200).json(updatedUser);
+
     const userId = req.user._id;
 
-    if (!profilePic) {
+    if (!req.file) {
       return res.status(400).json({ message: "Profile pic is required" });
     }
 
-    const uploadResponse = await cloudinary.uploader.upload(profilePic);
-    const updatedUser = await User.findByIdAndUpdate(
-      userId,
-      { profilePic: uploadResponse.secure_url },
-      { new: true }
+    // Upload buffer to Cloudinary
+    const uploadResponse = await cloudinary.uploader.upload_stream(
+      { folder: "profile_pics" },
+      async (error, result) => {
+        if (error) {
+          return res.status(500).json({ message: "Cloudinary upload failed" });
+        }
+
+        const updatedUser = await User.findByIdAndUpdate(
+          userId,
+          { profilePic: result.secure_url },
+          { new: true }
+        );
+
+        res.status(200).json(updatedUser);
+      }
     );
 
-    res.status(200).json(updatedUser);
+    // Write file buffer into the upload stream
+    uploadResponse.end(req.file.buffer);
   } catch (error) {
     console.log("error in update profile:", error);
     res.status(500).json({ message: "Internal server error" });
