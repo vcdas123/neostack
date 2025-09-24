@@ -19,7 +19,7 @@ const NoChatSelected = () => {
         {/* Welcome Text */}
         <h2 className="text-2xl font-bold">Welcome to Neostack!</h2>
         <p className="text-base-content/60">
-          Select a conversation from the sidebar to start chatting
+          Select a conversation from Chats or start a new one from Contacts
         </p>
       </div>
     </div>

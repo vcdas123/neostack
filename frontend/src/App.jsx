@@ -9,14 +9,17 @@ import ProfilePage from "./pages/ProfilePage";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuthStore } from "./store/useAuthStore";
 import { useThemeStore } from "./store/useThemeStore";
+import { useChatStore } from "./store/useChatStore";
 import { useEffect } from "react";
 
 import { Loader } from "lucide-react";
 import { Toaster } from "react-hot-toast";
+import MessageNotification from "./components/MessageNotification";
 
 const App = () => {
   const { authUser, checkAuth, isCheckingAuth, onlineUsers } = useAuthStore();
   const { theme } = useThemeStore();
+  const { notifications, removeNotification, subscribeToAllMessages } = useChatStore();
 
   console.log({ onlineUsers });
 
@@ -24,6 +27,11 @@ const App = () => {
     checkAuth();
   }, [checkAuth]);
 
+  useEffect(() => {
+    if (authUser) {
+      subscribeToAllMessages();
+    }
+  }, [authUser, subscribeToAllMessages]);
   console.log({ authUser });
 
   if (isCheckingAuth && !authUser)
@@ -57,6 +65,17 @@ const App = () => {
         />
       </Routes>
 
+      {/* Message Notifications */}
+      <div className="fixed top-0 right-0 z-50 space-y-2">
+        {notifications.map((notification) => (
+          <MessageNotification
+            key={notification.id}
+            message={notification.message}
+            sender={notification.sender}
+            onClose={() => removeNotification(notification.id)}
+          />
+        ))}
+      </div>
       <Toaster />
     </div>
   );
