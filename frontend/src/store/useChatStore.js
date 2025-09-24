@@ -6,26 +6,40 @@ import { useAuthStore } from "./useAuthStore";
 export const useChatStore = create((set, get) => ({
   messages: [],
   users: [],
+  usersWithChats: [],
   selectedUser: null,
   isUsersLoading: false,
   isMessagesLoading: false,
+  isChatsLoading: false,
   notifications: [],
 
   getAllUsers: async () => {
     set({ isUsersLoading: true });
     try {
       const res = await axiosInstance.get("/messages/users");
-      // Sort users by last message time
+      set({ users: res.data });
+    } catch (error) {
+      toast.error(error.response.data.message);
+    } finally {
+      set({ isUsersLoading: false });
+    }
+  },
+
+  getUsersWithChats: async () => {
+    set({ isChatsLoading: true });
+    try {
+      const res = await axiosInstance.get("/messages/chats");
+      // Sort users by last message time (most recent first)
       const sortedUsers = res.data.sort((a, b) => {
         const aTime = new Date(a.lastMessageTime || a.createdAt);
         const bTime = new Date(b.lastMessageTime || b.createdAt);
         return bTime - aTime;
       });
-      set({ users: sortedUsers });
+      set({ usersWithChats: sortedUsers });
     } catch (error) {
-      toast.error(error.response.data.message);
+      toast.error(error.response?.data?.message || "Failed to load chats");
     } finally {
-      set({ isUsersLoading: false });
+      set({ isChatsLoading: false });
     }
   },
 
@@ -66,6 +80,27 @@ export const useChatStore = create((set, get) => ({
       const user = updatedUsers.splice(userIndex, 1)[0];
       updatedUsers.unshift(user);
       set({ users: updatedUsers });
+    }
+
+    // Also update usersWithChats if the user exists there
+    const { usersWithChats } = get();
+    const updatedChats = [...usersWithChats];
+    const chatIndex = updatedChats.findIndex(user => user._id === userId);
+    
+    if (chatIndex > 0) {
+      const user = updatedChats.splice(chatIndex, 1)[0];
+      updatedChats.unshift(user);
+      set({ usersWithChats: updatedChats });
+    } else if (chatIndex === -1) {
+      // If user doesn't exist in chats, add them (new chat started)
+      const userFromAllUsers = users.find(u => u._id === userId);
+      if (userFromAllUsers) {
+        updatedChats.unshift({
+          ...userFromAllUsers,
+          lastMessageTime: new Date().toISOString()
+        });
+        set({ usersWithChats: updatedChats });
+      }
     }
   },
 
