@@ -8,21 +8,56 @@ export const getUsersForSidebar = async (req, res) => {
   try {
     const myId = req.user._id;
 
-    // Get distinct senderIds and receiverIds
-    const senderIds = await Message.distinct("senderId", { receiverId: myId });
-    const receiverIds = await Message.distinct("receiverId", {
-      senderId: myId,
+    // Get users with their last message time
+    const pipeline = [
+      {
+        $match: {
+          $or: [
+            { senderId: myId },
+            { receiverId: myId }
+          ]
+        }
+      },
+      {
+        $sort: { createdAt: -1 }
+      },
+      {
+        $group: {
+          _id: {
+            $cond: [
+              { $eq: ["$senderId", myId] },
+              "$receiverId",
+              "$senderId"
+            ]
+          },
+          lastMessageTime: { $first: "$createdAt" }
+        }
+      }
+    ];
+
+    const userMessages = await Message.aggregate(pipeline);
+    const userIds = userMessages.map(um => um._id);
+    
+    // Fetch user details with last message time
+    const users = await User.find({ _id: { $in: userIds } }).select("-password");
+    
+    // Add last message time to users
+    const usersWithLastMessage = users.map(user => {
+      const userMessage = userMessages.find(um => um._id.toString() === user._id.toString());
+      return {
+        ...user.toObject(),
+        lastMessageTime: userMessage?.lastMessageTime
+      };
+    });
+    
+    // Sort by last message time (most recent first)
+    usersWithLastMessage.sort((a, b) => {
+      const aTime = new Date(a.lastMessageTime || a.createdAt);
+      const bTime = new Date(b.lastMessageTime || b.createdAt);
+      return bTime - aTime;
     });
 
-    // Merge and remove duplicates
-    const uniqueUserIds = [...new Set([...senderIds, ...receiverIds])];
-
-    // Fetch user details
-    const users = await User.find({ _id: { $in: uniqueUserIds } }).select(
-      "-password"
-    );
-
-    res.status(200).json(users);
+    res.status(200).json(usersWithLastMessage);
   } catch (error) {
     console.error("Error in getUsersForSidebar: ", error.message);
     res.status(500).json({ error: "Internal server error" });

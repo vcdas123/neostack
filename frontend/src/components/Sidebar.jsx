@@ -3,6 +3,7 @@ import { useChatStore } from "../store/useChatStore";
 import { useAuthStore } from "../store/useAuthStore";
 import SidebarSkeleton from "./skeletons/SidebarSkeleton";
 import { Users } from "lucide-react";
+import { formatLastMessageTime } from "../lib/utils";
 
 const Sidebar = () => {
   const { getAllUsers, users, selectedUser, setSelectedUser, isUsersLoading } =
@@ -28,7 +29,6 @@ const Sidebar = () => {
           <Users className="size-6" />
           <span className="font-medium hidden lg:block">Contacts</span>
         </div>
-        {/* TODO: Online filter toggle */}
         <div className="mt-3 hidden lg:flex items-center gap-2">
           <label className="cursor-pointer flex items-center gap-2">
             <input
@@ -78,6 +78,11 @@ const Sidebar = () => {
             <div className="hidden lg:block text-left min-w-0">
               <div className="font-medium truncate">{user.fullName}</div>
               <div className="text-sm text-zinc-400">
+                {user.lastMessageTime && (
+                  <div className="text-xs text-zinc-500">
+                    {formatLastMessageTime(user.lastMessageTime)}
+                  </div>
+                )}
                 {onlineUsers.includes(user._id) ? "Online" : "Offline"}
               </div>
             </div>

@@ -9,12 +9,19 @@ export const useChatStore = create((set, get) => ({
   selectedUser: null,
   isUsersLoading: false,
   isMessagesLoading: false,
+  notifications: [],
 
   getAllUsers: async () => {
     set({ isUsersLoading: true });
     try {
       const res = await axiosInstance.get("/messages/users");
-      set({ users: res.data });
+      // Sort users by last message time
+      const sortedUsers = res.data.sort((a, b) => {
+        const aTime = new Date(a.lastMessageTime || a.createdAt);
+        const bTime = new Date(b.lastMessageTime || b.createdAt);
+        return bTime - aTime;
+      });
+      set({ users: sortedUsers });
     } catch (error) {
       toast.error(error.response.data.message);
     } finally {
@@ -33,6 +40,7 @@ export const useChatStore = create((set, get) => ({
       set({ isMessagesLoading: false });
     }
   },
+
   sendMessage: async messageData => {
     const { selectedUser, messages } = get();
     try {
@@ -41,9 +49,40 @@ export const useChatStore = create((set, get) => ({
         messageData
       );
       set({ messages: [...messages, res.data] });
+      
+      // Update user list order after sending message
+      get().updateUserOrder(selectedUser._id);
     } catch (error) {
       toast.error(error.response.data.message);
     }
+  },
+
+  updateUserOrder: (userId) => {
+    const { users } = get();
+    const updatedUsers = [...users];
+    const userIndex = updatedUsers.findIndex(user => user._id === userId);
+    
+    if (userIndex > 0) {
+      const user = updatedUsers.splice(userIndex, 1)[0];
+      updatedUsers.unshift(user);
+      set({ users: updatedUsers });
+    }
+  },
+
+  addNotification: (message, sender) => {
+    const { notifications } = get();
+    const newNotification = {
+      id: Date.now(),
+      message,
+      sender,
+      timestamp: new Date()
+    };
+    set({ notifications: [...notifications, newNotification] });
+  },
+
+  removeNotification: (notificationId) => {
+    const { notifications } = get();
+    set({ notifications: notifications.filter(n => n.id !== notificationId) });
   },
 
   subscribeToMessages: () => {
@@ -61,6 +100,29 @@ export const useChatStore = create((set, get) => ({
       set({
         messages: [...get().messages, newMessage],
       });
+      
+      // Update user order when receiving message
+      get().updateUserOrder(selectedUser._id);
+    });
+  },
+
+  subscribeToAllMessages: () => {
+    const socket = useAuthStore.getState().socket;
+    const { selectedUser, users } = get();
+
+    socket.on("newMessage", newMessage => {
+      const currentUserId = useAuthStore.getState().authUser?._id;
+      
+      // Only show notification if message is not from current user and not in current chat
+      if (newMessage.senderId !== currentUserId && 
+          (!selectedUser || newMessage.senderId !== selectedUser._id)) {
+        
+        const sender = users.find(user => user._id === newMessage.senderId);
+        get().addNotification(newMessage, sender);
+        
+        // Update user order
+        get().updateUserOrder(newMessage.senderId);
+      }
     });
   },
 
