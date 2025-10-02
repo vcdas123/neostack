@@ -66,6 +66,9 @@ export const useChatStore = create((set, get) => ({
       
       // Update user list order after sending message
       get().updateUserOrder(selectedUser._id);
+      
+      // Refresh chats to ensure proper ordering
+      get().getUsersWithChats();
     } catch (error) {
       toast.error(error.response.data.message);
     }
@@ -181,7 +184,9 @@ export const useChatStore = create((set, get) => ({
 
   unsubscribeFromMessages: () => {
     const socket = useAuthStore.getState().socket;
-    socket.off("newMessage");
+    if (socket) {
+      socket.off("newMessage");
+    }
   },
 
   setSelectedUser: selectedUser => set({ selectedUser }),
