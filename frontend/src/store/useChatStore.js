@@ -66,13 +66,27 @@ export const useChatStore = create((set, get) => ({
       
       // Update user list order after sending message
       get().updateUserOrder(selectedUser._id);
+      
+      // Refresh chat list to ensure sender appears in chats
+      const { usersWithChats } = get();
+      const existsInChats = usersWithChats.find(user => user._id === selectedUser._id);
+      if (!existsInChats) {
+        const updatedChats = [{
+          ...selectedUser,
+          lastMessageTime: res.data.createdAt
+        }, ...usersWithChats];
+        set({ usersWithChats: updatedChats });
+      }
     } catch (error) {
       toast.error(error.response.data.message);
     }
   },
 
   updateUserOrder: (userId) => {
-    const { users } = get();
+    const { users, usersWithChats } = get();
+    const currentTime = new Date().toISOString();
+    
+    // Update users list
     const updatedUsers = [...users];
     const userIndex = updatedUsers.findIndex(user => user._id === userId);
     
@@ -82,25 +96,17 @@ export const useChatStore = create((set, get) => ({
       set({ users: updatedUsers });
     }
 
-    // Also update usersWithChats if the user exists there
-    const { usersWithChats } = get();
+    // Update usersWithChats list
     const updatedChats = [...usersWithChats];
     const chatIndex = updatedChats.findIndex(user => user._id === userId);
     
-    if (chatIndex > 0) {
+    if (chatIndex >= 0) {
       const user = updatedChats.splice(chatIndex, 1)[0];
-      updatedChats.unshift(user);
+      updatedChats.unshift({
+        ...user,
+        lastMessageTime: currentTime
+      });
       set({ usersWithChats: updatedChats });
-    } else if (chatIndex === -1) {
-      // If user doesn't exist in chats, add them (new chat started)
-      const userFromAllUsers = users.find(u => u._id === userId);
-      if (userFromAllUsers) {
-        updatedChats.unshift({
-          ...userFromAllUsers,
-          lastMessageTime: new Date().toISOString()
-        });
-        set({ usersWithChats: updatedChats });
-      }
     }
   },
 
@@ -143,20 +149,32 @@ export const useChatStore = create((set, get) => ({
 
     socket.on("newMessage", newMessage => {
       const currentUserId = useAuthStore.getState().authUser?._id;
-      const { selectedUser, users } = get();
+      const { selectedUser, users, usersWithChats } = get();
       
       // Don't process messages sent by current user
       if (newMessage.senderId === currentUserId) return;
       
-      // Update chat order for any new message
-      get().updateUserOrder(newMessage.senderId);
+      // Find sender in users list
+      const sender = users.find(user => user._id === newMessage.senderId);
       
       // Show notification if message is not from currently selected user
       if (!selectedUser || newMessage.senderId !== selectedUser._id) {
-        const sender = users.find(user => user._id === newMessage.senderId);
         if (sender) {
           get().addNotification(newMessage, sender);
         }
+      }
+      
+      // Update chat order and refresh chat list
+      get().updateUserOrder(newMessage.senderId);
+      
+      // If sender is not in usersWithChats, add them
+      const existsInChats = usersWithChats.find(user => user._id === newMessage.senderId);
+      if (!existsInChats && sender) {
+        const updatedChats = [{
+          ...sender,
+          lastMessageTime: newMessage.createdAt
+        }, ...usersWithChats];
+        set({ usersWithChats: updatedChats });
       }
       
       // If message is from selected user, add to messages

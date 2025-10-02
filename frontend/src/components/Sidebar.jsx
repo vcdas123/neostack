@@ -29,6 +29,17 @@ const Sidebar = () => {
     }
   }, [activeTab, getAllUsers, getUsersWithChats]);
 
+  // Re-fetch chats when usersWithChats changes to ensure fresh data
+  useEffect(() => {
+    if (activeTab === "chats") {
+      // Small delay to ensure state has updated
+      const timeoutId = setTimeout(() => {
+        getUsersWithChats();
+      }, 100);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [usersWithChats.length, activeTab, getUsersWithChats]);
+
   const currentUsers = activeTab === "chats" ? usersWithChats : users;
   const isLoading = activeTab === "chats" ? isChatsLoading : isUsersLoading;
 
