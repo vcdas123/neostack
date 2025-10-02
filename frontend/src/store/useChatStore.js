@@ -29,13 +29,7 @@ export const useChatStore = create((set, get) => ({
     set({ isChatsLoading: true });
     try {
       const res = await axiosInstance.get("/messages/chats");
-      // Sort users by last message time (most recent first)
-      const sortedUsers = res.data.sort((a, b) => {
-        const aTime = new Date(a.lastMessageTime || a.createdAt);
-        const bTime = new Date(b.lastMessageTime || b.createdAt);
-        return bTime - aTime;
-      });
-      set({ usersWithChats: sortedUsers });
+      set({ usersWithChats: res.data });
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to load chats");
     } finally {
@@ -64,52 +58,43 @@ export const useChatStore = create((set, get) => ({
       );
       set({ messages: [...messages, res.data] });
       
-      // Update user list order after sending message
-      get().updateUserOrder(selectedUser._id);
-      
-      // Refresh chat list to ensure sender appears in chats
-      const { usersWithChats } = get();
-      const existsInChats = usersWithChats.find(user => user._id === selectedUser._id);
-      if (!existsInChats) {
-        const updatedChats = [{
-          ...selectedUser,
-          lastMessageTime: res.data.createdAt
-        }, ...usersWithChats];
-        set({ usersWithChats: updatedChats });
-      }
+      // Move this chat to top after sending
+      get().moveUserToTop(selectedUser._id, res.data.createdAt);
     } catch (error) {
       toast.error(error.response.data.message);
     }
   },
 
-  updateUserOrder: (userId) => {
-    const { users, usersWithChats } = get();
-    const currentTime = new Date().toISOString();
+  // Simple function to move a user to top of chat list
+  moveUserToTop: (userId, messageTime) => {
+    const { usersWithChats, users } = get();
     
-    // Update users list
-    const updatedUsers = [...users];
-    const userIndex = updatedUsers.findIndex(user => user._id === userId);
-    
-    if (userIndex > 0) {
-      const user = updatedUsers.splice(userIndex, 1)[0];
-      updatedUsers.unshift(user);
-      set({ users: updatedUsers });
-    }
-
-    // Update usersWithChats list
+    // Update usersWithChats
     const updatedChats = [...usersWithChats];
     const chatIndex = updatedChats.findIndex(user => user._id === userId);
     
-    if (chatIndex >= 0) {
-      const user = updatedChats.splice(chatIndex, 1)[0];
+    if (chatIndex > -1) {
+      // Remove from current position and add to top with updated time
+      const [user] = updatedChats.splice(chatIndex, 1);
       updatedChats.unshift({
         ...user,
-        lastMessageTime: currentTime
+        lastMessageTime: messageTime
       });
-      set({ usersWithChats: updatedChats });
+    } else {
+      // If user not in chats, find them in users and add to top
+      const userFromContacts = users.find(user => user._id === userId);
+      if (userFromContacts) {
+        updatedChats.unshift({
+          ...userFromContacts,
+          lastMessageTime: messageTime
+        });
+      }
     }
+    
+    set({ usersWithChats: updatedChats });
   },
 
+  // Add notification
   addNotification: (message, sender) => {
     const { notifications } = get();
     const newNotification = {
@@ -121,75 +106,72 @@ export const useChatStore = create((set, get) => ({
     set({ notifications: [...notifications, newNotification] });
   },
 
+  // Remove notification
   removeNotification: (notificationId) => {
     const { notifications } = get();
     set({ notifications: notifications.filter(n => n.id !== notificationId) });
   },
 
+  // Subscribe to messages for selected user only
   subscribeToMessages: () => {
     const { selectedUser } = get();
     if (!selectedUser) return;
 
     const socket = useAuthStore.getState().socket;
+    if (!socket) return;
 
     socket.on("newMessage", newMessage => {
-      const isMessageSentFromSelectedUser =
-        newMessage.senderId === selectedUser._id;
-      if (!isMessageSentFromSelectedUser) return;
+      const isMessageFromSelectedUser = newMessage.senderId === selectedUser._id;
+      if (!isMessageFromSelectedUser) return;
 
-      set({
-        messages: [...get().messages, newMessage],
-      });
+      // Add message to current chat
+      set({ messages: [...get().messages, newMessage] });
+      
+      // Move this chat to top
+      get().moveUserToTop(newMessage.senderId, newMessage.createdAt);
     });
   },
 
+  // Subscribe to all messages for notifications and chat list updates
   subscribeToAllMessages: () => {
     const socket = useAuthStore.getState().socket;
     if (!socket) return;
 
     socket.on("newMessage", newMessage => {
       const currentUserId = useAuthStore.getState().authUser?._id;
-      const { selectedUser, users, usersWithChats } = get();
+      const { selectedUser, users } = get();
       
-      // Don't process messages sent by current user
+      // Skip if message is from current user
       if (newMessage.senderId === currentUserId) return;
       
-      // Find sender in users list
-      const sender = users.find(user => user._id === newMessage.senderId);
+      // Always move sender to top of chat list
+      get().moveUserToTop(newMessage.senderId, newMessage.createdAt);
       
-      // Show notification if message is not from currently selected user
-      if (!selectedUser || newMessage.senderId !== selectedUser._id) {
+      // Show notification only if not viewing this chat
+      const isViewingThisChat = selectedUser && selectedUser._id === newMessage.senderId;
+      if (!isViewingThisChat) {
+        // Find sender info
+        const sender = users.find(user => user._id === newMessage.senderId) || 
+                     get().usersWithChats.find(user => user._id === newMessage.senderId);
+        
         if (sender) {
           get().addNotification(newMessage, sender);
         }
-      }
-      
-      // Update chat order and refresh chat list
-      get().updateUserOrder(newMessage.senderId);
-      
-      // If sender is not in usersWithChats, add them
-      const existsInChats = usersWithChats.find(user => user._id === newMessage.senderId);
-      if (!existsInChats && sender) {
-        const updatedChats = [{
-          ...sender,
-          lastMessageTime: newMessage.createdAt
-        }, ...usersWithChats];
-        set({ usersWithChats: updatedChats });
-      }
-      
-      // If message is from selected user, add to messages
-      if (selectedUser && newMessage.senderId === selectedUser._id) {
-        set({
-          messages: [...get().messages, newMessage],
-        });
+      } else {
+        // If viewing this chat, add message to current messages
+        set({ messages: [...get().messages, newMessage] });
       }
     });
   },
 
+  // Unsubscribe from messages
   unsubscribeFromMessages: () => {
     const socket = useAuthStore.getState().socket;
-    socket.off("newMessage");
+    if (socket) {
+      socket.off("newMessage");
+    }
   },
 
+  // Set selected user
   setSelectedUser: selectedUser => set({ selectedUser }),
 }));
