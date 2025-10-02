@@ -72,27 +72,29 @@ export const useChatStore = create((set, get) => ({
   },
 
   updateUserOrder: (userId) => {
-    const { users } = get();
-    const updatedUsers = [...users];
-    const userIndex = updatedUsers.findIndex(user => user._id === userId);
+    const { users, usersWithChats } = get();
     
-    if (userIndex > 0) {
-      const user = updatedUsers.splice(userIndex, 1)[0];
-      updatedUsers.unshift(user);
-      set({ users: updatedUsers });
-    }
-
-    // Also update usersWithChats if the user exists there
-    const { usersWithChats } = get();
+    // Update usersWithChats
     const updatedChats = [...usersWithChats];
     const chatIndex = updatedChats.findIndex(user => user._id === userId);
     
     if (chatIndex > 0) {
+      // Move existing chat to top
       const user = updatedChats.splice(chatIndex, 1)[0];
-      updatedChats.unshift(user);
+      updatedChats.unshift({
+        ...user,
+        lastMessageTime: new Date().toISOString()
+      });
+      set({ usersWithChats: updatedChats });
+    } else if (chatIndex === 0) {
+      // Update timestamp for chat already at top
+      updatedChats[0] = {
+        ...updatedChats[0],
+        lastMessageTime: new Date().toISOString()
+      };
       set({ usersWithChats: updatedChats });
     } else if (chatIndex === -1) {
-      // If user doesn't exist in chats, add them (new chat started)
+      // Add new chat to top
       const userFromAllUsers = users.find(u => u._id === userId);
       if (userFromAllUsers) {
         updatedChats.unshift({
@@ -101,6 +103,15 @@ export const useChatStore = create((set, get) => ({
         });
         set({ usersWithChats: updatedChats });
       }
+    }
+    
+    // Update users list order too
+    const updatedUsers = [...users];
+    const userIndex = updatedUsers.findIndex(user => user._id === userId);
+    if (userIndex > 0) {
+      const user = updatedUsers.splice(userIndex, 1)[0];
+      updatedUsers.unshift(user);
+      set({ users: updatedUsers });
     }
   },
 
@@ -170,7 +181,9 @@ export const useChatStore = create((set, get) => ({
 
   unsubscribeFromMessages: () => {
     const socket = useAuthStore.getState().socket;
-    socket.off("newMessage");
+    if (socket) {
+      socket.off("newMessage");
+    }
   },
 
   setSelectedUser: selectedUser => set({ selectedUser }),
