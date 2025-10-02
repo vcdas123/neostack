@@ -66,33 +66,38 @@ export const useChatStore = create((set, get) => ({
       
       // Update user list order after sending message
       get().updateUserOrder(selectedUser._id);
+      
+      // Refresh chats to ensure proper ordering
+      get().getUsersWithChats();
     } catch (error) {
       toast.error(error.response.data.message);
     }
   },
 
   updateUserOrder: (userId) => {
-    const { users } = get();
-    const updatedUsers = [...users];
-    const userIndex = updatedUsers.findIndex(user => user._id === userId);
+    const { users, usersWithChats } = get();
     
-    if (userIndex > 0) {
-      const user = updatedUsers.splice(userIndex, 1)[0];
-      updatedUsers.unshift(user);
-      set({ users: updatedUsers });
-    }
-
-    // Also update usersWithChats if the user exists there
-    const { usersWithChats } = get();
+    // Update usersWithChats
     const updatedChats = [...usersWithChats];
     const chatIndex = updatedChats.findIndex(user => user._id === userId);
     
     if (chatIndex > 0) {
+      // Move existing chat to top
       const user = updatedChats.splice(chatIndex, 1)[0];
-      updatedChats.unshift(user);
+      updatedChats.unshift({
+        ...user,
+        lastMessageTime: new Date().toISOString()
+      });
+      set({ usersWithChats: updatedChats });
+    } else if (chatIndex === 0) {
+      // Update timestamp for chat already at top
+      updatedChats[0] = {
+        ...updatedChats[0],
+        lastMessageTime: new Date().toISOString()
+      };
       set({ usersWithChats: updatedChats });
     } else if (chatIndex === -1) {
-      // If user doesn't exist in chats, add them (new chat started)
+      // Add new chat to top
       const userFromAllUsers = users.find(u => u._id === userId);
       if (userFromAllUsers) {
         updatedChats.unshift({
@@ -101,6 +106,15 @@ export const useChatStore = create((set, get) => ({
         });
         set({ usersWithChats: updatedChats });
       }
+    }
+    
+    // Update users list order too
+    const updatedUsers = [...users];
+    const userIndex = updatedUsers.findIndex(user => user._id === userId);
+    if (userIndex > 0) {
+      const user = updatedUsers.splice(userIndex, 1)[0];
+      updatedUsers.unshift(user);
+      set({ users: updatedUsers });
     }
   },
 
@@ -127,7 +141,6 @@ export const useChatStore = create((set, get) => ({
     const socket = useAuthStore.getState().socket;
 
     socket.on("newMessage", newMessage => {
-      console.log("New message received:", newMessage);
       const isMessageSentFromSelectedUser =
         newMessage.senderId === selectedUser._id;
       if (!isMessageSentFromSelectedUser) return;
@@ -135,22 +148,39 @@ export const useChatStore = create((set, get) => ({
       set({
         messages: [...get().messages, newMessage],
       });
-      
-      // Update user order when receiving message
-      get().updateUserOrder(selectedUser._id);
     });
   },
 
   subscribeToAllMessages: () => {
     const socket = useAuthStore.getState().socket;
-    const { selectedUser, users } = get();
+    if (!socket) return;
 
     socket.on("newMessage", newMessage => {
       const currentUserId = useAuthStore.getState().authUser?._id;
+      const { selectedUser, users } = get();
       
-      // Only show notification if message is not from current user and not in current chat
-      if (newMessage.senderId !== currentUserId && 
-          (!selectedUser || newMessage.senderId !== selectedUser._id)) {
+      // Don't process messages sent by current user
+      if (newMessage.senderId === currentUserId) return;
+      
+      // Update chat order for any new message
+      get().updateUserOrder(newMessage.senderId);
+      
+      // Show notification if message is not from currently selected user
+      if (!selectedUser || newMessage.senderId !== selectedUser._id) {
+        const sender = users.find(user => user._id === newMessage.senderId);
+        if (sender) {
+          get().addNotification(newMessage, sender);
+        }
+      }
+      
+      // If message is from selected user, add to messages
+      if (selectedUser && newMessage.senderId === selectedUser._id) {
+        set({
+          messages: [...get().messages, newMessage],
+        });
+      }
+    });
+  },
         
         const sender = users.find(user => user._id === newMessage.senderId);
         get().addNotification(newMessage, sender);
@@ -163,7 +193,9 @@ export const useChatStore = create((set, get) => ({
 
   unsubscribeFromMessages: () => {
     const socket = useAuthStore.getState().socket;
-    socket.off("newMessage");
+    if (socket) {
+      socket.off("newMessage");
+    }
   },
 
   setSelectedUser: selectedUser => set({ selectedUser }),

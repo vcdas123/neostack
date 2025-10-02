@@ -31,6 +31,13 @@ const App = () => {
     if (authUser) {
       subscribeToAllMessages();
     }
+    
+    return () => {
+      if (authUser) {
+        const { unsubscribeFromMessages } = useChatStore.getState();
+        unsubscribeFromMessages();
+      }
+    };
   }, [authUser, subscribeToAllMessages]);
   console.log({ authUser });
 
